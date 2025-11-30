@@ -232,6 +232,7 @@ static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF
 {
     ErlNifBinary service, serverfqdn;
     ERL_NIF_TERM return_state;
+    sasl_security_properties_t secprops;
 
     sasl_state_t* state = NULL;
 
@@ -275,6 +276,17 @@ static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF
     enif_mutex_unlock(state->controller_lock);
     switch (result) {
     case SASL_OK:
+        secprops.min_ssf = 0;
+        secprops.max_ssf = 256;
+        secprops.maxbufsize = 65535; /* FIXME */
+
+        secprops.property_names = NULL;
+        secprops.property_values = NULL;
+        /* secprops.security_flags = SASL_SEC_NOANONYMOUS; / * as appropriate */
+        secprops.security_flags = 0;
+
+        sasl_setprop(state->conn, SASL_SEC_PROPS, &secprops);
+
         return_state = enif_make_resource(env, state);
         enif_release_resource(state);
         return OK_TUPLE(env, return_state);
