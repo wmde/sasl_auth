@@ -470,6 +470,59 @@ static ERL_NIF_TERM sasl_cli_done(ErlNifEnv* env, int UNUSED(argc), const ERL_NI
     return ret;
 }
 
+static ERL_NIF_TERM _sasl_decode(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF_TERM argv[])
+{
+    sasl_state_t* state;
+    ErlNifBinary in;
+
+    if ((!enif_get_resource(
+            env, argv[0], sasl_client_connection_nif_resource_type, (void**)&state))
+        || (!enif_inspect_binary(env, argv[1], &in))) {
+        return enif_make_badarg(env);
+    } else if (!sasl_auth_process_check(env, state)) {
+        return enif_raise_exception(env, ATOM_NOT_CONTROLLING_PROCESS);
+    }
+
+    unsigned char* c_in = copy_bin(in);
+    const char* c_out;
+    unsigned int outlen;
+
+    enif_mutex_lock(state->controller_lock);
+    sasl_decode(state->conn, c_in, in.size, &c_out, &outlen);
+    enif_mutex_unlock(state->controller_lock);
+
+    enif_free(c_in);
+
+    return enif_make_tuple2(env, ATOM_OK, str_to_bin(env, c_out, outlen));
+}
+
+static ERL_NIF_TERM _sasl_encode(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF_TERM argv[])
+{
+    sasl_state_t* state;
+    ErlNifBinary in;
+
+    if ((!enif_get_resource(
+            env, argv[0], sasl_client_connection_nif_resource_type, (void**)&state))
+        || (!enif_inspect_binary(env, argv[1], &in))) {
+        return enif_make_badarg(env);
+    } else if (!sasl_auth_process_check(env, state)) {
+        return enif_raise_exception(env, ATOM_NOT_CONTROLLING_PROCESS);
+    }
+
+    unsigned char* c_in = copy_bin(in);
+    const char* c_out;
+    unsigned int outlen;
+
+    enif_mutex_lock(state->controller_lock);
+    sasl_encode(state->conn, c_in, in.size, &c_out, &outlen);
+    enif_mutex_unlock(state->controller_lock);
+
+    enif_free(c_in);
+
+    return enif_make_tuple2(env, ATOM_OK, str_to_bin(env, c_out, outlen));
+}
+
+
 // server begin
 static ERL_NIF_TERM sasl_srv_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF_TERM argv[])
 {
@@ -841,6 +894,8 @@ static ErlNifFunc nif_funcs[]
           { "sasl_client_start", 1, sasl_cli_start, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_client_step", 2, sasl_cli_step, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_client_done", 1, sasl_cli_done, ERL_NIF_DIRTY_JOB_CPU_BOUND },
+          { "sasl_decode", 2, _sasl_decode, ERL_NIF_DIRTY_JOB_CPU_BOUND },
+          { "sasl_encode", 2, _sasl_encode, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_kinit", 3, sasl_kinit, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_server_new", 3, sasl_srv_new, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_server_start", 2, sasl_srv_start, ERL_NIF_DIRTY_JOB_CPU_BOUND },
