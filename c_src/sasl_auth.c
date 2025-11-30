@@ -33,6 +33,7 @@ static ERL_NIF_TERM ATOM_NOT_CONTROLLING_PROCESS;
 
 #define KT_NAME_LEN 1024
 #define DEFAULT_CCNAME "MEMORY:krb5cc_sasl_auth"
+#define DEFAULT_SASL_BUFSIZE 65535
 
 
 typedef struct {
@@ -293,6 +294,19 @@ static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF
     enif_mutex_unlock(state->controller_lock);
     switch (result) {
     case SASL_OK:
+        sasl_security_properties_t secprops;
+        secprops.min_ssf = 0;
+        secprops.max_ssf = 256;
+        // FIXME: should be set by the application, or the protocol should split
+        // into shorter messages.
+        secprops.maxbufsize = DEFAULT_SASL_BUFSIZE;
+        
+        secprops.property_names = NULL;
+        secprops.property_values = NULL;
+        secprops.security_flags = 0;
+        
+        sasl_setprop(state->conn, SASL_SEC_PROPS, &secprops);
+
         return_state = enif_make_resource(env, state);
         enif_release_resource(state);
         return OK_TUPLE(env, return_state);
@@ -518,6 +532,17 @@ static ERL_NIF_TERM sasl_srv_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF
 
     switch (result) {
     case SASL_OK:
+        sasl_security_properties_t secprops;
+        secprops.min_ssf = 0;
+        secprops.max_ssf = 256;
+        // FIXME: should be set by the application, or the protocol should split
+        // into shorter messages.
+        secprops.maxbufsize = DEFAULT_SASL_BUFSIZE;
+        secprops.property_names = NULL;
+        secprops.property_values = NULL;
+        secprops.security_flags = 0;
+        sasl_setprop(state->conn, SASL_SEC_PROPS, &secprops);
+
         return_state = enif_make_resource(env, state);
         enif_release_resource(state);
         return OK_TUPLE(env, return_state);
