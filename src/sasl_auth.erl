@@ -111,18 +111,7 @@
 -spec init() ->
     ok | {error, {load_failed | bad_lib | load | reload | upgrade | old_code, Text :: string()}}.
 init() ->
-    NifLib =
-        case code:priv_dir(sasl_auth) of
-            {error, bad_name} ->
-                case code:which(?MODULE) of
-                    Filename when is_list(Filename) ->
-                        filename:join([filename:dirname(Filename), "../priv", "sasl_auth"]);
-                    _ ->
-                        filename:join("../priv", "sasl_auth")
-                end;
-            Dir ->
-                filename:join(Dir, "sasl_auth")
-        end,
+    NifLib = "/srv/home/awight/apache_hive/_build/prod/lib/sasl_auth/priv/sasl_auth",
     RetVal = erlang:load_nif(NifLib, 0),
     ErrorMsg =
         case RetVal of
