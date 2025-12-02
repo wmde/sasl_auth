@@ -9,6 +9,7 @@
     init/0,
     kinit/2,
     kinit/3,
+    client_new/1,
     client_new/3,
     client_new/4,
     client_listmech/1,
@@ -34,7 +35,7 @@
     -1 => sasl_fail,
     -2 => sasl_nomem,
     -3 => sasl_bufover,
-    -4 => sass_nomech,
+    -4 => sasl_nomech,
     -5 => sasl_badprot,
     -6 => sasl_notdone,
     -7 => sasl_badparam,
@@ -107,7 +108,7 @@
     | sasl_wrongmech
     | sasl_nochange
     | sasl_disabled
-    | sass_nomech
+    | sasl_nomech
     | unknown.
 
 -spec init() ->
@@ -187,6 +188,19 @@ kinit(KeyTabPath, Principal, Ccname) ->
         null_terminate(Principal),
         null_terminate(Ccname)
     ).
+
+-spec client_new(
+    ServiceName :: service_name()
+) ->
+    {ok, state()} | {error, sasl_code()}.
+client_new(ServiceName) ->
+    ServiceName0 = null_terminate(ServiceName),
+    case sasl_client_new(ServiceName0) of
+        {ok, _} = Ret ->
+            Ret;
+        {error, Code} ->
+            {error, code_to_atom(Code)}
+    end.
 
 %% @doc Initialize a client context. User client's principal as client's username.
 %% This is the default behaviour before version 2.1.1, however may not work when
@@ -339,6 +353,8 @@ sasl_krb5_kt_default_name() -> not_loaded(?LINE).
 sasl_kinit(_KeyTab, _Principal, _CacheName) -> not_loaded(?LINE).
 
 sasl_client_new(_Service, _Host, _Principal, _User) -> not_loaded(?LINE).
+
+sasl_client_new(_Service) -> not_loaded(?LINE).
 
 sasl_listmech(_State) -> not_loaded(?LINE).
 
