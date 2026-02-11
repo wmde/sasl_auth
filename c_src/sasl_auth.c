@@ -230,7 +230,7 @@ static int sasl_auth_process_check(ErlNifEnv* env, sasl_state_t* state)
 
 static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF_TERM argv[])
 {
-    ErlNifBinary service, serverfqdn; //, principal, user;
+    ErlNifBinary service, serverfqdn;
     ERL_NIF_TERM return_state;
     sasl_security_properties_t secprops;
 
@@ -432,8 +432,15 @@ static ERL_NIF_TERM sasl_cli_done(ErlNifEnv* env, int UNUSED(argc), const ERL_NI
     enif_mutex_destroy(state->controller_lock);
     state->controller_lock = NULL;
 
-    enif_free(state->principal);
-    state->principal = NULL;
+    if (state->principal != NULL) {
+        enif_free(state->principal);
+        state->principal = NULL;
+    }
+
+    if (state->user != NULL) {
+        enif_free(state->user);
+        state->user = NULL;
+    }
 
     enif_free(state->host);
     state->host = NULL;
