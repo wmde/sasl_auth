@@ -230,7 +230,7 @@ static int sasl_auth_process_check(ErlNifEnv* env, sasl_state_t* state)
 
 static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF_TERM argv[])
 {
-    ErlNifBinary service, serverfqdn, principal, user;
+    ErlNifBinary service, serverfqdn; //, principal, user;
     ERL_NIF_TERM return_state;
     sasl_security_properties_t secprops;
 
@@ -238,8 +238,9 @@ static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF
 
     if ((!enif_inspect_binary(env, argv[0], &service))
         || (!enif_inspect_binary(env, argv[1], &serverfqdn))
-        || (!enif_inspect_binary(env, argv[2], &principal))
-        || (!enif_inspect_binary(env, argv[3], &user))) {
+        // || (!enif_inspect_binary(env, argv[2], &principal))
+        // || (!enif_inspect_binary(env, argv[3], &user))
+    ) {
         return enif_make_badarg(env);
     }
 
@@ -256,6 +257,7 @@ static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF
 
     state->controller_lock = enif_mutex_create("sasl_auth_client.controller_lock");
 
+    /*
     state->principal = copy_bin(principal);
     if (state->principal == NULL) {
         return ERROR_TUPLE(env, ATOM_OOM);
@@ -265,6 +267,7 @@ static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF
     if (state->user == NULL) {
         return ERROR_TUPLE(env, ATOM_OOM);
     }
+    */
 
     state->service = copy_bin(service);
     if (state->service == NULL) {
@@ -278,8 +281,8 @@ static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF
     }
 
     sasl_callback_t callbacks[16]
-        = { { SASL_CB_USER, (void*)sasl_cyrus_cb_getsimple, state->user },
-              { SASL_CB_AUTHNAME, (void*)sasl_cyrus_cb_getsimple, state->user },
+        = { /* { SASL_CB_USER, (void*)sasl_cyrus_cb_getsimple, state->user },
+              { SASL_CB_AUTHNAME, (void*)sasl_cyrus_cb_getsimple, state->user }, */
               { SASL_CB_LIST_END } };
 
     memcpy(state->callbacks, callbacks, sizeof(callbacks));
@@ -887,7 +890,7 @@ kinit_free_chars:
 }
 
 static ErlNifFunc nif_funcs[]
-    = { { "sasl_client_new", 4, sasl_cli_new, ERL_NIF_DIRTY_JOB_CPU_BOUND },
+    = { { "sasl_client_new", 2, sasl_cli_new, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_listmech", 1, sasl_list_mech, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_client_start", 1, sasl_cli_start, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_client_step", 2, sasl_cli_step, ERL_NIF_DIRTY_JOB_CPU_BOUND },
