@@ -248,6 +248,9 @@ static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF
         return ERROR_TUPLE(env, ATOM_OOM);
     }
 
+    state->user = NULL;
+    state->principal = NULL;
+
     state->mech_set = 0;
 
     enif_self(env, &state->controlling_process);
