@@ -112,7 +112,8 @@
 -spec init() ->
     ok | {error, {load_failed | bad_lib | load | reload | upgrade | old_code, Text :: string()}}.
 init() ->
-    NifLib = "/srv/home/awight/apache_hive/_build/prod/lib/sasl_auth/priv/sasl_auth",
+    %% FIXME: dynamic path
+    NifLib = "/home/awight/apache_hive/_build/prod/lib/sasl_auth/priv/sasl_auth",
     RetVal = erlang:load_nif(NifLib, 0),
     ErrorMsg =
         case RetVal of
