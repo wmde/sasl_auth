@@ -32,7 +32,6 @@ static ERL_NIF_TERM ATOM_NOT_CONTROLLING_PROCESS;
     ERROR_TUPLE(env, enif_make_tuple2(env, enif_make_int(env, code), sasl_error(env, state)));
 
 #define KT_NAME_LEN 1024
-#define DEFAULT_CCNAME "MEMORY:krb5cc_sasl_auth"
 
 
 typedef struct {
@@ -145,7 +144,6 @@ static int load(ErlNifEnv* env, void** UNUSED(priv), ERL_NIF_TERM UNUSED(info))
     int cli_result = sasl_client_init(NULL);
     sasl_server_connection_nif_resource_type = init_resource_type(env, "sasl_auth_srv_state");
     int srv_result = sasl_server_init(NULL, "sasl_auth");
-    setenv("KRB5CCNAME", DEFAULT_CCNAME, 1);
     return !sasl_client_connection_nif_resource_type && !(cli_result == SASL_OK)
         && !sasl_server_connection_nif_resource_type && !(srv_result == SASL_OK);
 }
@@ -232,15 +230,14 @@ static int sasl_auth_process_check(ErlNifEnv* env, sasl_state_t* state)
 
 static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF_TERM argv[])
 {
-    ErlNifBinary service, serverfqdn, principal, user;
+    ErlNifBinary service, serverfqdn;
     ERL_NIF_TERM return_state;
+    sasl_security_properties_t secprops;
 
     sasl_state_t* state = NULL;
 
     if ((!enif_inspect_binary(env, argv[0], &service))
-        || (!enif_inspect_binary(env, argv[1], &serverfqdn))
-        || (!enif_inspect_binary(env, argv[2], &principal))
-        || (!enif_inspect_binary(env, argv[3], &user))) {
+        || (!enif_inspect_binary(env, argv[1], &serverfqdn))) {
         return enif_make_badarg(env);
     }
 
@@ -251,21 +248,14 @@ static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF
         return ERROR_TUPLE(env, ATOM_OOM);
     }
 
+    state->user = NULL;
+    state->principal = NULL;
+
     state->mech_set = 0;
 
     enif_self(env, &state->controlling_process);
 
     state->controller_lock = enif_mutex_create("sasl_auth_client.controller_lock");
-
-    state->principal = copy_bin(principal);
-    if (state->principal == NULL) {
-        return ERROR_TUPLE(env, ATOM_OOM);
-    }
-
-    state->user = copy_bin(user);
-    if (state->user == NULL) {
-        return ERROR_TUPLE(env, ATOM_OOM);
-    }
 
     state->service = copy_bin(service);
     if (state->service == NULL) {
@@ -278,29 +268,29 @@ static ERL_NIF_TERM sasl_cli_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF
         return ERROR_TUPLE(env, ATOM_OOM);
     }
 
-    sasl_callback_t callbacks[16]
-        = { { SASL_CB_USER, (void*)sasl_cyrus_cb_getsimple, state->user },
-              { SASL_CB_AUTHNAME, (void*)sasl_cyrus_cb_getsimple, state->user },
-              { SASL_CB_LIST_END } };
-
-    memcpy(state->callbacks, callbacks, sizeof(callbacks));
-
     enif_mutex_lock(state->controller_lock);
 
     int result = sasl_client_new((const char*)state->service, (const char*)state->host, NULL, NULL,
-        state->callbacks, 0, &state->conn);
+        NULL, 0, &state->conn);
 
     enif_mutex_unlock(state->controller_lock);
     switch (result) {
     case SASL_OK:
+        secprops.min_ssf = 0;
+        secprops.max_ssf = 256;
+        secprops.maxbufsize = 65535; /* FIXME */
+
+        secprops.property_names = NULL;
+        secprops.property_values = NULL;
+        /* secprops.security_flags = SASL_SEC_NOANONYMOUS; / * as appropriate */
+        secprops.security_flags = 0;
+
+        sasl_setprop(state->conn, SASL_SEC_PROPS, &secprops);
+
         return_state = enif_make_resource(env, state);
         enif_release_resource(state);
         return OK_TUPLE(env, return_state);
     default:
-        enif_free(state->principal);
-        state->principal = NULL;
-        enif_free(state->user);
-        state->user = NULL;
         enif_free(state->service);
         state->service = NULL;
         enif_free(state->host);
@@ -445,8 +435,15 @@ static ERL_NIF_TERM sasl_cli_done(ErlNifEnv* env, int UNUSED(argc), const ERL_NI
     enif_mutex_destroy(state->controller_lock);
     state->controller_lock = NULL;
 
-    enif_free(state->principal);
-    state->principal = NULL;
+    if (state->principal != NULL) {
+        enif_free(state->principal);
+        state->principal = NULL;
+    }
+
+    if (state->user != NULL) {
+        enif_free(state->user);
+        state->user = NULL;
+    }
 
     enif_free(state->host);
     state->host = NULL;
@@ -457,6 +454,59 @@ static ERL_NIF_TERM sasl_cli_done(ErlNifEnv* env, int UNUSED(argc), const ERL_NI
     ret = ATOM_OK;
     return ret;
 }
+
+static ERL_NIF_TERM _sasl_decode(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF_TERM argv[])
+{
+    sasl_state_t* state;
+    ErlNifBinary in;
+
+    if ((!enif_get_resource(
+            env, argv[0], sasl_client_connection_nif_resource_type, (void**)&state))
+        || (!enif_inspect_binary(env, argv[1], &in))) {
+        return enif_make_badarg(env);
+    } else if (!sasl_auth_process_check(env, state)) {
+        return enif_raise_exception(env, ATOM_NOT_CONTROLLING_PROCESS);
+    }
+
+    unsigned char* c_in = copy_bin(in);
+    const char* c_out;
+    unsigned int outlen;
+
+    enif_mutex_lock(state->controller_lock);
+    sasl_decode(state->conn, c_in, in.size, &c_out, &outlen);
+    enif_mutex_unlock(state->controller_lock);
+
+    enif_free(c_in);
+
+    return enif_make_tuple2(env, ATOM_OK, str_to_bin(env, c_out, outlen));
+}
+
+static ERL_NIF_TERM _sasl_encode(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF_TERM argv[])
+{
+    sasl_state_t* state;
+    ErlNifBinary in;
+
+    if ((!enif_get_resource(
+            env, argv[0], sasl_client_connection_nif_resource_type, (void**)&state))
+        || (!enif_inspect_binary(env, argv[1], &in))) {
+        return enif_make_badarg(env);
+    } else if (!sasl_auth_process_check(env, state)) {
+        return enif_raise_exception(env, ATOM_NOT_CONTROLLING_PROCESS);
+    }
+
+    unsigned char* c_in = copy_bin(in);
+    const char* c_out;
+    unsigned int outlen;
+
+    enif_mutex_lock(state->controller_lock);
+    sasl_encode(state->conn, c_in, in.size, &c_out, &outlen);
+    enif_mutex_unlock(state->controller_lock);
+
+    enif_free(c_in);
+
+    return enif_make_tuple2(env, ATOM_OK, str_to_bin(env, c_out, outlen));
+}
+
 
 // server begin
 static ERL_NIF_TERM sasl_srv_new(ErlNifEnv* env, int UNUSED(argc), const ERL_NIF_TERM argv[])
@@ -824,11 +874,13 @@ kinit_free_chars:
 }
 
 static ErlNifFunc nif_funcs[]
-    = { { "sasl_client_new", 4, sasl_cli_new, ERL_NIF_DIRTY_JOB_CPU_BOUND },
+    = { { "sasl_client_new", 2, sasl_cli_new, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_listmech", 1, sasl_list_mech, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_client_start", 1, sasl_cli_start, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_client_step", 2, sasl_cli_step, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_client_done", 1, sasl_cli_done, ERL_NIF_DIRTY_JOB_CPU_BOUND },
+          { "sasl_decode", 2, _sasl_decode, ERL_NIF_DIRTY_JOB_CPU_BOUND },
+          { "sasl_encode", 2, _sasl_encode, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_kinit", 3, sasl_kinit, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_server_new", 3, sasl_srv_new, ERL_NIF_DIRTY_JOB_CPU_BOUND },
           { "sasl_server_start", 2, sasl_srv_start, ERL_NIF_DIRTY_JOB_CPU_BOUND },
